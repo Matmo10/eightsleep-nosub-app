@@ -226,6 +226,10 @@ export const userRouter = createTRPCRouter({
         midStageSleepLevel: z.number().int().min(-100).max(100),
         finalSleepLevel: z.number().int().min(-100).max(100),
         timezoneTZ: z.string().max(50),
+        preheatEnabled: z.boolean(),
+        preheatTime: z.string().time(),
+        preheatLevel: z.number().int().min(-10).max(10),
+        cycleEnabled: z.boolean(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -239,6 +243,10 @@ export const userRouter = createTRPCRouter({
           midStageSleepLevel: input.midStageSleepLevel,
           finalSleepLevel: input.finalSleepLevel,
           timezoneTZ: input.timezoneTZ,
+          preheatEnabled: input.preheatEnabled,
+          preheatTime: input.preheatTime,
+          preheatLevel: input.preheatLevel,
+          cycleEnabled: input.cycleEnabled,
           updatedAt: new Date(),
         };
         console.log("Updated profile:", updatedProfile);
@@ -255,6 +263,10 @@ export const userRouter = createTRPCRouter({
               midStageSleepLevel: input.midStageSleepLevel,
               finalSleepLevel: input.finalSleepLevel,
               timezoneTZ: input.timezoneTZ,
+              preheatEnabled: input.preheatEnabled,
+              preheatTime: input.preheatTime,
+              preheatLevel: input.preheatLevel,
+              cycleEnabled: input.cycleEnabled,
               updatedAt: new Date(),
             },
           })
