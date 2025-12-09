@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+  boolean,
   integer,
   pgTableCreator,
   text,
@@ -30,6 +31,10 @@ export const userTemperatureProfile = createTable("userTemperatureProfiles", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   timezoneTZ: varchar("timezone", { length: 50 }).notNull(),
+  preheatEnabled: boolean("preheatEnabled").notNull().default(false),
+  preheatTime: time("preheatTime").notNull().default("21:00"),
+  preheatLevel: integer("preheatLevel").notNull().default(10),
+  cycleEnabled: boolean("cycleEnabled").notNull().default(true),
 });
 
 export const usersRelations = relations(users, ({ one }) => ({
