@@ -33,7 +33,7 @@ export const LogoutButton: React.FC<LogoutButtonProps> = ({ onLogoutSuccess }) =
         {logoutMutation.isPending ? "Logging out..." : "Logout"}
       </button>
       <a
-        href="https://cron-job.org"
+        href="https://console.cron-job.org/jobs"
         target="_blank"
         rel="noopener noreferrer"
         className="text-sm text-gray-400 hover:text-white"

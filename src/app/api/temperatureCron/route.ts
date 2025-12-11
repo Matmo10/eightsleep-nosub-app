@@ -4,7 +4,7 @@ import { userTemperatureProfile, users } from "~/server/db/schema";
 import { eq } from "drizzle-orm";
 import { obtainFreshAccessToken } from "~/server/eight/auth";
 import { type Token } from "~/server/eight/types";
-import { setHeatingLevel, turnOnSide, turnOffSide } from "~/server/eight/eight";
+import { setHeatingLevel, turnOnSide, turnOffSide, setPreheat } from "~/server/eight/eight";
 import { getCurrentHeatingStatus } from "~/server/eight/user";
 
 export const runtime = "nodejs";
@@ -23,11 +23,6 @@ function addDays(date: Date, days: number): Date {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
-}
-
-function isWithinTimeRange(current: Date, target: Date, rangeMinutes: number): boolean {
-  const diffMs = Math.abs(current.getTime() - target.getTime());
-  return diffMs <= rangeMinutes * 60 * 1000;
 }
 
 async function retryApiCall<T>(apiCall: () => Promise<T>, retries = 3): Promise<T> {
@@ -135,25 +130,22 @@ export async function adjustTemperature(testMode?: TestMode): Promise<void> {
 
         if (userTemperatureProfile.preheatEnabled) {
           const preheatTime = createDateWithTime(userNow, userTemperatureProfile.preheatTime);
-          if (isWithinTimeRange(userNow, preheatTime, 15)) {
-            console.log(`Pre-heating for user ${profile.users.email}`);
-            if (!heatingStatus.isHeating) {
-              if (testMode?.enabled) {
-                console.log(`[TEST MODE] Would turn on heating for user ${profile.users.email}`);
-              } else {
-                await retryApiCall(() => turnOnSide(token, profile.users.eightUserId));
-                console.log(`Heating turned on for user ${profile.users.email}`);
+          const preheatEndTime = new Date(preheatTime.getTime() + 60 * 60 * 1000); // 1 hour duration
+
+          if (userNow >= preheatTime && userNow < preheatEndTime) {
+            const remainingSeconds = Math.round((preheatEndTime.getTime() - userNow.getTime()) / 1000);
+            if (remainingSeconds > 0) {
+              console.log(`Pre-heating for user ${profile.users.email} with ${remainingSeconds} seconds remaining.`);
+              if (heatingStatus.heatingLevel !== userTemperatureProfile.preheatLevel || !heatingStatus.isHeating) {
+                if (testMode?.enabled) {
+                  console.log(`[TEST MODE] Would set heating level to ${userTemperatureProfile.preheatLevel} for user ${profile.users.email}`);
+                } else {
+                  await retryApiCall(() => setPreheat(token, profile.users.eightUserId, userTemperatureProfile.preheatLevel, remainingSeconds));
+                  console.log(`Heating level set to ${userTemperatureProfile.preheatLevel} for user ${profile.users.email}`);
+                }
               }
+              continue; // Skip the rest of the logic for this user
             }
-            if (heatingStatus.heatingLevel !== userTemperatureProfile.preheatLevel) {
-              if (testMode?.enabled) {
-                console.log(`[TEST MODE] Would set heating level to ${userTemperatureProfile.preheatLevel} for user ${profile.users.email}`);
-              } else {
-                await retryApiCall(() => setHeatingLevel(token, profile.users.eightUserId, userTemperatureProfile.preheatLevel));
-                console.log(`Heating level set to ${userTemperatureProfile.preheatLevel} for user ${profile.users.email}`);
-              }
-            }
-            continue; // Skip the rest of the logic for this user
           }
         }
 

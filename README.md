@@ -36,7 +36,7 @@ In the following, I will explain how to self-host this webapp on Vercel so that 
     - Try to log in to the app with your Eight Sleep Login. This will work now.
     - Important: **Set up a Temperature profile now!** or the next step will fail. You can change it later.
 10. Activate the recurring Update of the Mattress
-    - Go to [cron-job.org](https://cron-job.org/en/) and set up a free account
+    - Go to [cron-job.org](https://console.cron-job.org/jobs) and set up a free account
     - Create a new "Cron Job"
     - Title can be anything
     - URL: `https://YOUR_VERCEL_URL/api/temperatureCron` e.g. `https://eightsleep-nosub-app-efwfwfwf-aerotows-projects.vercel.app/api/temperatureCron`

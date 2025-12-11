@@ -77,6 +77,19 @@ export async function turnOnSide(token: Token, userId: string): Promise<void> {
   });
 }
 
+export async function setPreheat(token: Token, userId: string, level: number, durationSeconds: number): Promise<void> {
+  const url = `${APP_API_URL}v1/users/${userId}/temperature`;
+  const data = {
+    currentState: { type: "timeBased" },
+    timeBased: { level, durationSeconds },
+  };
+
+  await fetchWithAuth(url, token, z.object({}), {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
 export async function turnOffSide(token: Token, userId: string): Promise<void> {
   const url = `${APP_API_URL}v1/users/${userId}/temperature`;
   const data = { currentState: { type: "off" } };
