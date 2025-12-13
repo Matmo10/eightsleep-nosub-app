@@ -293,20 +293,30 @@ export async function GET(request: NextRequest): Promise<Response> {
   const authHeader = request.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new Response("Unauthorized", { status: 401 });
-  } else {
-    try {
-              const testTime = new Date(Number(testTimeParam) * 1000);
-              if (isNaN(testTime.getTime())) {
-                throw new Error("Invalid testTime parameter");
-              }
-              console.log(`[TEST MODE] Running temperature adjustment cron job with test time: ${testTime.toISOString()}`);
-              await adjustTemperature({ enabled: true, currentTime: testTime });
-            } else {
-              await adjustTemperature();      }
-      return Response.json({ success: true });
-    } catch (error) {
-      console.error("Error in temperature adjustment cron job:", error instanceof Error ? error.message : String(error));
-      return new Response("Internal server error", { status: 500 });
+  }
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const testTimeParam = searchParams.get("testTime");
+
+    if (testTimeParam) {
+      const testTime = new Date(Number(testTimeParam) * 1000);
+      if (isNaN(testTime.getTime())) {
+        throw new Error("Invalid testTime parameter");
+      }
+      console.log(
+        `[TEST MODE] Running temperature adjustment cron job with test time: ${testTime.toISOString()}`,
+      );
+      await adjustTemperature({ enabled: true, currentTime: testTime });
+    } else {
+      await adjustTemperature();
     }
+    return Response.json({ success: true });
+  } catch (error) {
+    console.error(
+      "Error in temperature adjustment cron job:",
+      error instanceof Error ? error.message : String(error),
+    );
+    return new Response("Internal server error", { status: 500 });
   }
 }
