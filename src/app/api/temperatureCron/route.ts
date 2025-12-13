@@ -79,6 +79,13 @@ function adjustTimeToCurrentCycle(cycleStart: Date, currentTime: Date, timeInCyc
   return adjustedTime;
 }
 
+function isWithinTimeRange(now: Date, targetTime: Date, minutes: number): boolean {
+  const halfRange = minutes * 60 * 1000 / 2;
+  const lowerBound = new Date(targetTime.getTime() - halfRange);
+  const upperBound = new Date(targetTime.getTime() + halfRange);
+  return now >= lowerBound && now <= upperBound;
+}
+
 interface TestMode {
   enabled: boolean;
   currentTime: Date;
@@ -127,6 +134,36 @@ export async function adjustTemperature(testMode?: TestMode): Promise<void> {
         } else {
           heatingStatus = await retryApiCall(() => getCurrentHeatingStatus(token));
         }
+
+        if (userTemperatureProfile.preheatOnly) {
+          const preheatTime = createDateWithTime(userNow, userTemperatureProfile.preheatTime);
+          const preheatEndTime = new Date(preheatTime.getTime() + 120 * 60 * 1000); // 2 hour duration
+
+          if (userNow >= preheatTime && userNow < preheatEndTime) {
+            const remainingSeconds = Math.round((preheatEndTime.getTime() - userNow.getTime()) / 1000);
+            if (remainingSeconds > 0) {
+              console.log(`Pre-heating for user ${profile.users.email} with ${remainingSeconds} seconds remaining.`);
+              if (heatingStatus.heatingLevel !== userTemperatureProfile.preheatLevel || !heatingStatus.isHeating) {
+                if (testMode?.enabled) {
+                  console.log(`[TEST MODE] Would set heating level to ${userTemperatureProfile.preheatLevel} for user ${profile.users.email}`);
+                } else {
+                  await retryApiCall(() => setPreheat(token, profile.users.eightUserId, userTemperatureProfile.preheatLevel, remainingSeconds));
+                  console.log(`Heating level set to ${userTemperatureProfile.preheatLevel} for user ${profile.users.email}`);
+                }
+              }
+            }
+          } else if (heatingStatus.isHeating) {
+            // If preheatOnly is enabled and we are outside the preheating window, turn off the heating
+            if (testMode?.enabled) {
+              console.log(`[TEST MODE] Would turn off heating for user ${profile.users.email}`);
+            } else {
+              await retryApiCall(() => turnOffSide(token, profile.users.eightUserId));
+              console.log(`Heating turned off for user ${profile.users.email} as preheatOnly is enabled and the preheating window has passed.`);
+            }
+          }
+          continue; // Skip the rest of the logic for this user
+        }
+        
 
         if (userTemperatureProfile.preheatEnabled) {
           const preheatTime = createDateWithTime(userNow, userTemperatureProfile.preheatTime);
@@ -258,17 +295,14 @@ export async function GET(request: NextRequest): Promise<Response> {
     return new Response("Unauthorized", { status: 401 });
   } else {
     try {
-      const testTimeParam = request.nextUrl.searchParams.get("testTime");
-      if (testTimeParam) {
-        const testTime = new Date(Number(testTimeParam)* 1000);
-        if (isNaN(testTime.getTime())) {
-          throw new Error("Invalid testTime parameter");
-        }
-        console.log(`[TEST MODE] Running temperature adjustment cron job with test time: ${testTime.toISOString()}`);
-        await adjustTemperature({ enabled: true, currentTime: testTime });
-      } else {
-        await adjustTemperature();
-      }
+              const testTime = new Date(Number(testTimeParam) * 1000);
+              if (isNaN(testTime.getTime())) {
+                throw new Error("Invalid testTime parameter");
+              }
+              console.log(`[TEST MODE] Running temperature adjustment cron job with test time: ${testTime.toISOString()}`);
+              await adjustTemperature({ enabled: true, currentTime: testTime });
+            } else {
+              await adjustTemperature();      }
       return Response.json({ success: true });
     } catch (error) {
       console.error("Error in temperature adjustment cron job:", error instanceof Error ? error.message : String(error));
