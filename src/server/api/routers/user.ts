@@ -230,6 +230,7 @@ export const userRouter = createTRPCRouter({
         preheatTime: z.string().time(),
         preheatLevel: z.number().int().min(-10).max(10),
         cycleEnabled: z.boolean(),
+        preheatOnly: z.boolean(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -247,6 +248,7 @@ export const userRouter = createTRPCRouter({
           preheatTime: input.preheatTime,
           preheatLevel: input.preheatLevel,
           cycleEnabled: input.cycleEnabled,
+          preheatOnly: input.preheatOnly,
           updatedAt: new Date(),
         };
         console.log("Updated profile:", updatedProfile);
@@ -267,6 +269,7 @@ export const userRouter = createTRPCRouter({
               preheatTime: input.preheatTime,
               preheatLevel: input.preheatLevel,
               cycleEnabled: input.cycleEnabled,
+              preheatOnly: input.preheatOnly,
               updatedAt: new Date(),
             },
           })

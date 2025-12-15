@@ -22,6 +22,7 @@ const temperatureProfileSchema = z.object({
   preheatTime: z.string().regex(/^\d{2}:\d{2}$/, "Must be in HH:MM format"),
   preheatLevel: z.number().min(-10).max(10),
   cycleEnabled: z.boolean(),
+  preheatOnly: z.boolean(),
 });
 
 type TemperatureProfileForm = z.infer<typeof temperatureProfileSchema>;
@@ -54,6 +55,7 @@ export const TemperatureProfileForm: React.FC = () => {
       preheatTime: "21:00",
       preheatLevel: 10,
       cycleEnabled: true,
+      preheatOnly: false,
     },
   });
 
@@ -61,6 +63,7 @@ export const TemperatureProfileForm: React.FC = () => {
   const wakeupTime = watch("wakeupTime");
   const cycleEnabled = watch("cycleEnabled");
   const preheatEnabled = watch("preheatEnabled");
+  const preheatOnly = watch("preheatOnly");
 
   const [sleepInfo, setSleepInfo] = useState({
     duration: "",
@@ -84,6 +87,7 @@ export const TemperatureProfileForm: React.FC = () => {
       setValue("preheatTime", profile.preheatTime.slice(0, 5));
       setValue("preheatLevel", profile.preheatLevel);
       setValue("cycleEnabled", profile.cycleEnabled);
+      setValue("preheatOnly", profile.preheatOnly);
       setIsExistingProfile(true);
       setIsLoading(false);
     } else if (getUserTemperatureProfileQuery.isError) {
@@ -101,6 +105,13 @@ export const TemperatureProfileForm: React.FC = () => {
     setValue,
     getUserTemperatureProfileQuery.error,
   ]);
+
+  useEffect(() => {
+    if (preheatOnly) {
+      setValue("cycleEnabled", false);
+    }
+  }, [preheatOnly, setValue]);
+
 
   useEffect(() => {
     if (bedTime && wakeupTime) {
@@ -178,6 +189,7 @@ export const TemperatureProfileForm: React.FC = () => {
       preheatTime: formatTimeForAPI(data.preheatTime),
       preheatLevel: data.preheatLevel,
       cycleEnabled: data.cycleEnabled,
+      preheatOnly: data.preheatOnly,
     };
 
     console.log("Data being sent to server:", mutationData);
@@ -238,10 +250,11 @@ export const TemperatureProfileForm: React.FC = () => {
   );
 
   const CheckboxInput: React.FC<{
-    name: "preheatEnabled" | "cycleEnabled";
+    name: "preheatEnabled" | "cycleEnabled" | "preheatOnly";
     label: string;
     control: Control<TemperatureProfileForm>;
-  }> = ({ name, label, control }) => (
+    disabled?: boolean;
+  }> = ({ name, label, control, disabled }) => (
     <div className="mb-4">
       <label className="flex items-center">
         <Controller
@@ -253,6 +266,7 @@ export const TemperatureProfileForm: React.FC = () => {
               checked={value}
               onChange={onChange}
               className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+              disabled={disabled}
             />
           )}
         />
@@ -274,6 +288,11 @@ export const TemperatureProfileForm: React.FC = () => {
         onSubmit={handleSubmit(onSubmit)}
         className="space-y-4 text-gray-800"
       >
+        <CheckboxInput
+          name="preheatOnly"
+          label="Preheat-only Mode"
+          control={control}
+        />
         <CheckboxInput
           name="preheatEnabled"
           label="Enable Pre-heating Mode"
@@ -314,6 +333,7 @@ export const TemperatureProfileForm: React.FC = () => {
           name="cycleEnabled"
           label="Enable Sleep Cycle Mode"
           control={control}
+          disabled={preheatOnly}
         />
 
         <div className={`pl-4 ${cycleEnabled ? "" : "hidden"}`}>

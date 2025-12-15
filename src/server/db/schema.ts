@@ -35,6 +35,7 @@ export const userTemperatureProfile = createTable("userTemperatureProfiles", {
   preheatTime: time("preheatTime").notNull().default("21:00"),
   preheatLevel: integer("preheatLevel").notNull().default(10),
   cycleEnabled: boolean("cycleEnabled").notNull().default(true),
+  preheatOnly: boolean("preheatOnly").notNull().default(false),
 });
 
 export const usersRelations = relations(users, ({ one }) => ({
