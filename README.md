@@ -54,6 +54,26 @@ Enjoy! That's it!
 
 Check the [Release Notes](https://github.com/aerotow/eightsleep-nosub-app/releases) to see what changed. I will include steps you have to do there to upgrade. After you have read the notes there and made potential changes, make sure to go to your GitHub fork and sync to the latest commit of this repository. It's just one click at the top.
 
+## Local Development
+
+If you want to run this project locally:
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Matmo10/eightsleep-nosub-app.git
+   cd eightsleep-nosub-app
+   ```
+2. Install dependencies:
+   ```bash
+   pnpm install
+   ```
+3. Set up environment variables:
+   Copy `.env.example` to `.env` and fill in the values (including `APPROVED_EMAILS`).
+4. Run the development server:
+   ```bash
+   pnpm dev
+   ```
+
 ## Credits
 
 - Thanks to @lukas-clarke for his Home Assistant package eight_sleep and pyEight which gave me the idea of the possibility to use the API of the app.
