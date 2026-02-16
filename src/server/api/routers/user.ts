@@ -336,6 +336,7 @@ export const userRouter = createTRPCRouter({
       z.object({
         name: z.string().min(1).max(100),
         phases: z.array(phaseSchema).min(1),
+        allowManualOverride: z.boolean().optional().default(true),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -346,6 +347,7 @@ export const userRouter = createTRPCRouter({
           email: decoded.email,
           name: input.name,
           phases: input.phases,
+          allowManualOverride: input.allowManualOverride,
         })
         .returning();
       return newProfile!;
@@ -357,6 +359,7 @@ export const userRouter = createTRPCRouter({
         id: z.number().int(),
         name: z.string().min(1).max(100),
         phases: z.array(phaseSchema).min(1),
+        allowManualOverride: z.boolean(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -376,6 +379,7 @@ export const userRouter = createTRPCRouter({
         .set({
           name: input.name,
           phases: input.phases,
+          allowManualOverride: input.allowManualOverride,
           updatedAt: new Date(),
         })
         .where(eq(sleepProfiles.id, input.id))

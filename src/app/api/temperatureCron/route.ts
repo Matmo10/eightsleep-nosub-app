@@ -45,6 +45,7 @@ function isInTimeWindow(now: Date, start: Date, end: Date): boolean {
 interface PhaseResult {
   level: number | null; // null = turn off, number = set this level
   isActive: boolean;    // false = no phase covers the current time
+  phaseStartTime: Date | null; // when the current phase started
 }
 
 /**
@@ -52,7 +53,7 @@ interface PhaseResult {
  * Handles overnight schedules by checking both today's and yesterday's occurrences.
  */
 function getCurrentPhaseLevel(userNow: Date, phases: SleepPhase[]): PhaseResult {
-  if (phases.length === 0) return { level: null, isActive: false };
+  if (phases.length === 0) return { level: null, isActive: false, phaseStartTime: null };
 
   // Convert phase times to Dates on the same day as userNow, plus yesterday's versions
   interface PhaseCandidate {
@@ -80,7 +81,7 @@ function getCurrentPhaseLevel(userNow: Date, phases: SleepPhase[]): PhaseResult 
     }
   }
 
-  if (candidates.length === 0) return { level: null, isActive: false };
+  if (candidates.length === 0) return { level: null, isActive: false, phaseStartTime: null };
 
   // Pick the candidate with the latest start time (most recently started phase)
   candidates.sort((a, b) => b.startTime.getTime() - a.startTime.getTime());
@@ -91,12 +92,12 @@ function getCurrentPhaseLevel(userNow: Date, phases: SleepPhase[]): PhaseResult 
   if (best.level === null) {
     const offEnd = new Date(best.startTime.getTime() + 30 * 60 * 1000);
     if (userNow >= best.startTime && userNow < offEnd) {
-      return { level: null, isActive: true };
+      return { level: null, isActive: true, phaseStartTime: best.startTime };
     }
-    return { level: null, isActive: false };
+    return { level: null, isActive: false, phaseStartTime: null };
   }
 
-  return { level: best.level, isActive: true };
+  return { level: best.level, isActive: true, phaseStartTime: best.startTime };
 }
 
 interface TestMode {
@@ -180,9 +181,16 @@ export async function adjustTemperature(testMode?: TestMode): Promise<void> {
 
           if (activeProfile.length > 0 && activeProfile[0]!.phases.length > 0) {
             const phases = activeProfile[0]!.phases;
-            const { level, isActive } = getCurrentPhaseLevel(userNow, phases);
+            const allowManualOverride = activeProfile[0]!.allowManualOverride;
+            const { level, isActive, phaseStartTime } = getCurrentPhaseLevel(userNow, phases);
 
-            console.log(`User ${profile.users.email}: time=${userNow.toISOString()}, activeProfile="${activeProfile[0]!.name}", phaseLevel=${level ?? "off"}, isActive=${isActive}, isHeating=${heatingStatus.isHeating}`);
+            // If allowManualOverride is on, only enforce during the first 30 min of a phase
+            const PHASE_TRANSITION_WINDOW_MS = 30 * 60 * 1000;
+            const isPhaseTransition = phaseStartTime
+              ? (userNow.getTime() - phaseStartTime.getTime()) < PHASE_TRANSITION_WINDOW_MS
+              : false;
+
+            console.log(`User ${profile.users.email}: time=${userNow.toISOString()}, activeProfile="${activeProfile[0]!.name}", phaseLevel=${level ?? "off"}, isActive=${isActive}, isHeating=${heatingStatus.isHeating}, manualOverride=${allowManualOverride}, phaseTransition=${isPhaseTransition}`);
 
             if (isActive) {
               if (level === null) {
@@ -196,8 +204,10 @@ export async function adjustTemperature(testMode?: TestMode): Promise<void> {
                   }
                 }
               } else {
-                // Active heating phase
-                if (!heatingStatus.isHeating || heatingStatus.heatingLevel !== level) {
+                // Active heating phase — check manual override
+                if (!heatingStatus.isHeating && allowManualOverride && !isPhaseTransition) {
+                  console.log(`Manual override respected - bed is off mid-phase, skipping for user ${profile.users.email}`);
+                } else if (!heatingStatus.isHeating || heatingStatus.heatingLevel !== level) {
                   if (testMode?.enabled) {
                     console.log(`[TEST MODE] Would set heating to level ${level} for user ${profile.users.email}`);
                   } else {

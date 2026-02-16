@@ -24,6 +24,7 @@ type SettingsForm = z.infer<typeof settingsSchema>;
 
 const profileSchema = z.object({
   name: z.string().min(1, "Profile name is required").max(100),
+  allowManualOverride: z.boolean(),
   phases: z.array(z.object({
     time: z.string().regex(/^\d{2}:\d{2}$/, "Must be in HH:MM format"),
     level: z.number().min(-10).max(10),
@@ -105,6 +106,7 @@ export const TemperatureProfileForm: React.FC = () => {
     resolver: zodResolver(profileSchema),
     defaultValues: {
       name: "",
+      allowManualOverride: true,
       phases: [{ time: "22:00", level: 2, isOff: false }],
     },
   });
@@ -145,6 +147,7 @@ export const TemperatureProfileForm: React.FC = () => {
         const phases = (profile.phases as Array<{ time: string; level: number | null }>);
         profileForm.reset({
           name: profile.name,
+          allowManualOverride: profile.allowManualOverride,
           phases: phases.map(p => ({
             time: p.time,
             level: p.level !== null ? p.level / 10 : 0,
@@ -180,9 +183,9 @@ export const TemperatureProfileForm: React.FC = () => {
     }));
 
     if (editingProfileId) {
-      updateProfileMutation.mutate({ id: editingProfileId, name: data.name, phases });
+      updateProfileMutation.mutate({ id: editingProfileId, name: data.name, phases, allowManualOverride: data.allowManualOverride });
     } else {
-      createProfileMutation.mutate({ name: data.name, phases });
+      createProfileMutation.mutate({ name: data.name, phases, allowManualOverride: data.allowManualOverride });
     }
   };
 
@@ -195,6 +198,7 @@ export const TemperatureProfileForm: React.FC = () => {
   const onCreateNewProfile = () => {
     profileForm.reset({
       name: "New Profile",
+      allowManualOverride: true,
       phases: [
         { time: "22:00", level: 2, isOff: false },
         { time: "07:00", level: 0, isOff: true },
@@ -204,6 +208,7 @@ export const TemperatureProfileForm: React.FC = () => {
     // Save immediately so it gets an ID
     createProfileMutation.mutate({
       name: "New Profile",
+      allowManualOverride: true,
       phases: [
         { time: "22:00", level: 20 },
         { time: "07:00", level: null },
@@ -386,6 +391,19 @@ export const TemperatureProfileForm: React.FC = () => {
                 <p className="mt-1 text-sm text-red-600">{profileForm.formState.errors.name.message}</p>
               )}
             </div>
+
+            {/* Manual Override Toggle */}
+            <Controller
+              name="allowManualOverride"
+              control={profileForm.control}
+              render={({ field: { onChange, value } }) => (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={value} onChange={onChange} className="rounded" />
+                  <span className="text-sm font-medium text-gray-700">Respect manual off</span>
+                  <span className="text-xs text-gray-400">(won&apos;t re-enable if you turn bed off mid-phase)</span>
+                </label>
+              )}
+            />
 
             {/* Phases */}
             <div className="space-y-3">

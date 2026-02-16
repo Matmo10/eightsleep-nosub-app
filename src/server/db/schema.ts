@@ -52,6 +52,7 @@ export const sleepProfiles = createTable("sleepProfiles", {
   email: varchar("email", { length: 255 }).references(() => users.email).notNull(),
   name: varchar("name", { length: 100 }).notNull(),
   phases: jsonb("phases").$type<SleepPhase[]>().notNull(),
+  allowManualOverride: boolean("allowManualOverride").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
