@@ -41,6 +41,7 @@ export const TemperatureProfileForm: React.FC = () => {
   const [scheduleMode, setScheduleMode] = useState(false); // false = preheat-only, true = schedule
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
   const [editingProfileId, setEditingProfileId] = useState<number | null>(null);
+  const initializedRef = React.useRef(false);
 
   // --- Queries ---
   const settingsQuery = apiR.user.getUserTemperatureProfile.useQuery();
@@ -113,8 +114,9 @@ export const TemperatureProfileForm: React.FC = () => {
     name: "phases",
   });
 
-  // --- Load existing data ---
+  // --- Load existing data (only on initial load) ---
   useEffect(() => {
+    if (initializedRef.current) return;
     if (settingsQuery.isSuccess) {
       const data = settingsQuery.data;
       settingsForm.setValue("preheatOnly", data.preheatOnly);
@@ -127,9 +129,11 @@ export const TemperatureProfileForm: React.FC = () => {
       setSelectedProfileId(data.activeProfileId ?? null);
       setIsExistingProfile(true);
       setIsLoading(false);
+      initializedRef.current = true;
     } else if (settingsQuery.isError) {
       setIsExistingProfile(false);
       setIsLoading(false);
+      initializedRef.current = true;
     }
   }, [settingsQuery.isSuccess, settingsQuery.isError, settingsQuery.data, settingsForm]);
 

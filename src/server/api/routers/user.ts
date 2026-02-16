@@ -438,7 +438,11 @@ export const userRouter = createTRPCRouter({
 
       await db
         .update(userTemperatureProfile)
-        .set({ activeProfileId: input.profileId, updatedAt: new Date() })
+        .set({
+          activeProfileId: input.profileId,
+          preheatOnly: input.profileId === null,
+          updatedAt: new Date(),
+        })
         .where(eq(userTemperatureProfile.email, decoded.email))
         .execute();
 
