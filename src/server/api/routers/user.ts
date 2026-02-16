@@ -1,14 +1,14 @@
 import { z } from "zod";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { db } from "~/server/db";
-import { users, userTemperatureProfile } from "~/server/db/schema";
+import { users, userTemperatureProfile, sleepProfiles } from "~/server/db/schema";
 import { cookies } from "next/headers";
 import {
   authenticate,
   obtainFreshAccessToken,
   AuthError,
 } from "~/server/eight/auth";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { type Token } from "~/server/eight/types";
 import { TRPCError } from "@trpc/server";
 import { adjustTemperature } from "~/app/api/temperatureCron/route";
@@ -48,6 +48,11 @@ const checkAuthCookie = async (headers: Headers) => {
 
   return decoded;
 };
+
+const phaseSchema = z.object({
+  time: z.string().regex(/^\d{2}:\d{2}$/),
+  level: z.number().int().min(-100).max(100).nullable(),
+});
 
 export const userRouter = createTRPCRouter({
   checkLoginState: publicProcedure.query(async ({ ctx }) => {
@@ -220,53 +225,42 @@ export const userRouter = createTRPCRouter({
   updateUserTemperatureProfile: publicProcedure
     .input(
       z.object({
-        bedTime: z.string().time(),
-        wakeupTime: z.string().time(),
-        initialSleepLevel: z.number().int().min(-100).max(100),
-        midStageSleepLevel: z.number().int().min(-100).max(100),
-        finalSleepLevel: z.number().int().min(-100).max(100),
         timezoneTZ: z.string().max(50),
         preheatTime: z.string().time(),
         preheatLevel: z.number().int().min(-10).max(10),
-        cycleEnabled: z.boolean(),
         preheatOnly: z.boolean(),
+        activeProfileId: z.number().int().nullable(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
       try {
         const decoded = await checkAuthCookie(ctx.headers);
-        const updatedProfile = {
-          email: decoded.email,
-          bedTime: input.bedTime,
-          wakeupTime: input.wakeupTime,
-          initialSleepLevel: input.initialSleepLevel,
-          midStageSleepLevel: input.midStageSleepLevel,
-          finalSleepLevel: input.finalSleepLevel,
-          timezoneTZ: input.timezoneTZ,
-          preheatTime: input.preheatTime,
-          preheatLevel: input.preheatLevel,
-          cycleEnabled: input.cycleEnabled,
-          preheatOnly: input.preheatOnly,
-          updatedAt: new Date(),
-        };
-        console.log("Updated profile:", updatedProfile);
 
         await db
           .insert(userTemperatureProfile)
-          .values(updatedProfile)
+          .values({
+            email: decoded.email,
+            timezoneTZ: input.timezoneTZ,
+            preheatTime: input.preheatTime,
+            preheatLevel: input.preheatLevel,
+            preheatOnly: input.preheatOnly,
+            activeProfileId: input.activeProfileId,
+            // Old columns need defaults for the NOT NULL constraint
+            bedTime: "22:00",
+            wakeupTime: "06:00",
+            initialSleepLevel: 0,
+            midStageSleepLevel: 0,
+            finalSleepLevel: 0,
+            updatedAt: new Date(),
+          })
           .onConflictDoUpdate({
             target: userTemperatureProfile.email,
             set: {
-              bedTime: input.bedTime,
-              wakeupTime: input.wakeupTime,
-              initialSleepLevel: input.initialSleepLevel,
-              midStageSleepLevel: input.midStageSleepLevel,
-              finalSleepLevel: input.finalSleepLevel,
               timezoneTZ: input.timezoneTZ,
               preheatTime: input.preheatTime,
               preheatLevel: input.preheatLevel,
-              cycleEnabled: input.cycleEnabled,
               preheatOnly: input.preheatOnly,
+              activeProfileId: input.activeProfileId,
               updatedAt: new Date(),
             },
           })
@@ -289,6 +283,12 @@ export const userRouter = createTRPCRouter({
     try {
       const decoded = await checkAuthCookie(ctx.headers);
       const email = decoded.email;
+
+      // Delete all sleep profiles first
+      await db
+        .delete(sleepProfiles)
+        .where(eq(sleepProfiles.email, email))
+        .execute();
 
       // Delete user temperature profile
       const result = await db
@@ -319,6 +319,132 @@ export const userRouter = createTRPCRouter({
       });
     }
   }),
+
+  // --- Sleep Profile CRUD ---
+
+  getSleepProfiles: publicProcedure.query(async ({ ctx }) => {
+    const decoded = await checkAuthCookie(ctx.headers);
+    return db
+      .select()
+      .from(sleepProfiles)
+      .where(eq(sleepProfiles.email, decoded.email))
+      .execute();
+  }),
+
+  createSleepProfile: publicProcedure
+    .input(
+      z.object({
+        name: z.string().min(1).max(100),
+        phases: z.array(phaseSchema).min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const decoded = await checkAuthCookie(ctx.headers);
+      const [newProfile] = await db
+        .insert(sleepProfiles)
+        .values({
+          email: decoded.email,
+          name: input.name,
+          phases: input.phases,
+        })
+        .returning();
+      return newProfile!;
+    }),
+
+  updateSleepProfile: publicProcedure
+    .input(
+      z.object({
+        id: z.number().int(),
+        name: z.string().min(1).max(100),
+        phases: z.array(phaseSchema).min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const decoded = await checkAuthCookie(ctx.headers);
+      const existing = await db
+        .select()
+        .from(sleepProfiles)
+        .where(and(eq(sleepProfiles.id, input.id), eq(sleepProfiles.email, decoded.email)))
+        .execute();
+
+      if (existing.length === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Profile not found." });
+      }
+
+      await db
+        .update(sleepProfiles)
+        .set({
+          name: input.name,
+          phases: input.phases,
+          updatedAt: new Date(),
+        })
+        .where(eq(sleepProfiles.id, input.id))
+        .execute();
+
+      await adjustTemperature();
+      return { success: true };
+    }),
+
+  deleteSleepProfile: publicProcedure
+    .input(z.object({ id: z.number().int() }))
+    .mutation(async ({ ctx, input }) => {
+      const decoded = await checkAuthCookie(ctx.headers);
+      const existing = await db
+        .select()
+        .from(sleepProfiles)
+        .where(and(eq(sleepProfiles.id, input.id), eq(sleepProfiles.email, decoded.email)))
+        .execute();
+
+      if (existing.length === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Profile not found." });
+      }
+
+      // Clear activeProfileId if this was the active profile
+      const settings = await db.query.userTemperatureProfile.findFirst({
+        where: eq(userTemperatureProfile.email, decoded.email),
+      });
+      if (settings?.activeProfileId === input.id) {
+        await db
+          .update(userTemperatureProfile)
+          .set({ activeProfileId: null, updatedAt: new Date() })
+          .where(eq(userTemperatureProfile.email, decoded.email))
+          .execute();
+      }
+
+      await db
+        .delete(sleepProfiles)
+        .where(eq(sleepProfiles.id, input.id))
+        .execute();
+
+      return { success: true };
+    }),
+
+  setActiveProfile: publicProcedure
+    .input(z.object({ profileId: z.number().int().nullable() }))
+    .mutation(async ({ ctx, input }) => {
+      const decoded = await checkAuthCookie(ctx.headers);
+
+      // Verify profile belongs to user if non-null
+      if (input.profileId !== null) {
+        const profile = await db
+          .select()
+          .from(sleepProfiles)
+          .where(and(eq(sleepProfiles.id, input.profileId), eq(sleepProfiles.email, decoded.email)))
+          .execute();
+        if (profile.length === 0) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Profile not found." });
+        }
+      }
+
+      await db
+        .update(userTemperatureProfile)
+        .set({ activeProfileId: input.profileId, updatedAt: new Date() })
+        .where(eq(userTemperatureProfile.email, decoded.email))
+        .execute();
+
+      await adjustTemperature();
+      return { success: true };
+    }),
 });
 
 async function authenticateUser(email: string, password: string) {

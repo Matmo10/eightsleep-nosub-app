@@ -76,8 +76,13 @@ Required in `.env.local`:
 
 ## Database
 
-Two tables in schema.ts:
+Three tables in schema.ts:
 - `users` - Eight Sleep auth tokens (email is PK)
-- `userTemperatureProfile` - Sleep schedule settings (one per user)
+- `userTemperatureProfile` - Sleep schedule settings (one per user). `preheatOnly=true` → preheat mode. `preheatOnly=false && activeProfileId != null` → schedule mode.
+- `sleepProfiles` - Named sleep profiles with arbitrary phases (jsonb). Each phase has a time ("HH:MM") and level (-100 to 100, null = turn off).
 
 Path alias: `~/*` maps to `./src/*`
+
+## Git Preferences
+
+- Never include "Co-Authored-By: Claude" or any Claude attribution in commit messages.
