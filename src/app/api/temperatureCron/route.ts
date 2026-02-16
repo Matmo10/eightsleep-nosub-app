@@ -182,19 +182,25 @@ export async function adjustTemperature(testMode?: TestMode): Promise<void> {
           if (activeProfile.length > 0 && activeProfile[0]!.phases.length > 0) {
             const phases = activeProfile[0]!.phases;
             const allowManualOverride = activeProfile[0]!.allowManualOverride;
-            const { level, isActive, phaseStartTime } = getCurrentPhaseLevel(userNow, phases);
+            const { level, isActive } = getCurrentPhaseLevel(userNow, phases);
 
-            // If allowManualOverride is on, only enforce during the first 30 min of a phase
-            const PHASE_TRANSITION_WINDOW_MS = 30 * 60 * 1000;
-            const isPhaseTransition = phaseStartTime
-              ? (userNow.getTime() - phaseStartTime.getTime()) < PHASE_TRANSITION_WINDOW_MS
-              : false;
+            // Check if schedule is currently overridden by manual off
+            const OVERRIDE_EXPIRY_MS = 18 * 60 * 60 * 1000; // 18 hours safety reset
+            const isOverridden = allowManualOverride
+              && tempProfile.scheduleOverriddenAt !== null
+              && (now.getTime() - tempProfile.scheduleOverriddenAt.getTime()) < OVERRIDE_EXPIRY_MS;
 
-            console.log(`User ${profile.users.email}: time=${userNow.toISOString()}, activeProfile="${activeProfile[0]!.name}", phaseLevel=${level ?? "off"}, isActive=${isActive}, isHeating=${heatingStatus.isHeating}, manualOverride=${allowManualOverride}, phaseTransition=${isPhaseTransition}`);
+            console.log(`User ${profile.users.email}: time=${userNow.toISOString()}, activeProfile="${activeProfile[0]!.name}", phaseLevel=${level ?? "off"}, isActive=${isActive}, isHeating=${heatingStatus.isHeating}, manualOverride=${allowManualOverride}, overridden=${isOverridden}, lastHeatingSet=${tempProfile.lastHeatingSetAt?.toISOString() ?? "never"}`);
 
             if (isActive) {
               if (level === null) {
-                // Off phase: turn off the bed
+                // Off phase: turn off the bed and clear override flag (resets for next cycle)
+                if (!testMode?.enabled) {
+                  await db
+                    .update(userTemperatureProfile)
+                    .set({ scheduleOverriddenAt: null, lastHeatingSetAt: null })
+                    .where(eq(userTemperatureProfile.email, profile.users.email));
+                }
                 if (heatingStatus.isHeating) {
                   if (testMode?.enabled) {
                     console.log(`[TEST MODE] Would turn off heating (off phase) for user ${profile.users.email}`);
@@ -202,16 +208,35 @@ export async function adjustTemperature(testMode?: TestMode): Promise<void> {
                     await retryApiCall(() => turnOffSide(token, profile.users.eightUserId));
                     console.log(`Turned off heating (off phase) for user ${profile.users.email}`);
                   }
+                } else {
+                  console.log(`Off phase, bed already off. Override flag cleared for user ${profile.users.email}`);
                 }
+              } else if (isOverridden) {
+                // Schedule was manually overridden — skip all heating until "off" phase clears it
+                console.log(`Manual override active — skipping heating for user ${profile.users.email}`);
               } else {
-                // Active heating phase — check manual override
-                if (!heatingStatus.isHeating && allowManualOverride && !isPhaseTransition) {
-                  console.log(`Manual override respected - bed is off mid-phase, skipping for user ${profile.users.email}`);
+                // Active heating phase
+                const cronPreviouslyActivated = tempProfile.lastHeatingSetAt !== null;
+
+                if (!heatingStatus.isHeating && allowManualOverride && cronPreviouslyActivated) {
+                  // Bed is off, but we previously turned it on this cycle → manual override detected
+                  if (!testMode?.enabled) {
+                    await db
+                      .update(userTemperatureProfile)
+                      .set({ scheduleOverriddenAt: now })
+                      .where(eq(userTemperatureProfile.email, profile.users.email));
+                  }
+                  console.log(`Manual off detected — setting override flag for user ${profile.users.email}`);
                 } else if (!heatingStatus.isHeating || heatingStatus.heatingLevel !== level) {
+                  // Turn on or adjust level
                   if (testMode?.enabled) {
                     console.log(`[TEST MODE] Would set heating to level ${level} for user ${profile.users.email}`);
                   } else {
                     await retryApiCall(() => setPreheat(token, profile.users.eightUserId, level, 3600));
+                    await db
+                      .update(userTemperatureProfile)
+                      .set({ lastHeatingSetAt: now })
+                      .where(eq(userTemperatureProfile.email, profile.users.email));
                     console.log(`Set heating to level ${level} for user ${profile.users.email}`);
                   }
                 } else {

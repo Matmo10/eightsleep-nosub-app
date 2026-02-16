@@ -40,6 +40,10 @@ export const userTemperatureProfile = createTable("userTemperatureProfiles", {
   preheatLevel: integer("preheatLevel").notNull().default(10),
   preheatOnly: boolean("preheatOnly").notNull().default(false),
   activeProfileId: integer("activeProfileId"),
+  // Tracks when the cron last successfully activated heating (for manual override detection)
+  lastHeatingSetAt: timestamp("lastHeatingSetAt"),
+  // Set when manual off is detected; cleared by "off" phase or after 18h
+  scheduleOverriddenAt: timestamp("scheduleOverriddenAt"),
 });
 
 export interface SleepPhase {
