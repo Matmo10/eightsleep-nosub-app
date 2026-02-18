@@ -54,7 +54,7 @@ All temperature control goes through `PUT {APP_API_URL}v1/users/{userId}/tempera
 
 | Function | Payload | Effect |
 |---|---|---|
-| `setPreheat(token, userId, level, durationSeconds)` | `currentState.type: "timeBased"`, level, duration | **Primary control method.** Sets bed to a specific temperature level (-100 to 100) for a countdown duration. Used by both preheat-only and sleep cycle modes. |
+| `setPreheat(token, userId, level, durationSeconds)` | `currentState.type: "smart"`, `timeBased: {level, durationSeconds}`, `currentLevel` | **Primary control method.** Sets bed to a specific temperature level (-100 to 100) for a countdown duration. **IMPORTANT:** Must use `"smart"` as state type, NOT `"timeBased"` — Eight Sleep's API returns 500 for `currentState.type: "timeBased"`. |
 | `turnOffSide(token, userId)` | `currentState.type: "off"` | Turns the bed side off completely. |
 | `turnOnSide(token, userId)` | `currentState.type: "smart"` | Turns on smart/autopilot mode (not currently used by cron). |
 | `setHeatingLevel(token, userId, level, duration)` | `timeBased.level`, `currentLevel` | Updates heating level without changing state type (not currently used by cron). |
