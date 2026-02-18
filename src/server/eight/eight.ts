@@ -19,7 +19,8 @@ export async function fetchWithAuth<T extends z.ZodType<unknown, z.ZodTypeDef, u
     },
   });
   if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
+    const body = await response.text().catch(() => "(no body)");
+    throw new Error(`API request failed: ${response.status} - ${body}`);
   }
   const data: unknown = await response.json();
   return schema.parse(data);
@@ -80,8 +81,9 @@ export async function turnOnSide(token: Token, userId: string): Promise<void> {
 export async function setPreheat(token: Token, userId: string, level: number, durationSeconds: number): Promise<void> {
   const url = `${APP_API_URL}v1/users/${userId}/temperature`;
   const data = {
-    currentState: { type: "timeBased" },
+    currentState: { type: "smart" },
     timeBased: { level, durationSeconds },
+    currentLevel: level,
   };
 
   await fetchWithAuth(url, token, z.object({}), {
