@@ -194,11 +194,11 @@ export async function adjustTemperature(testMode?: TestMode): Promise<void> {
 
             if (isActive) {
               if (level === null) {
-                // Off phase: turn off the bed and clear override flag (resets for next cycle)
+                // Off phase: turn off the bed and clear all override flags (resets for next cycle)
                 if (!testMode?.enabled) {
                   await db
                     .update(userTemperatureProfile)
-                    .set({ scheduleOverriddenAt: null, lastHeatingSetAt: null })
+                    .set({ scheduleOverriddenAt: null, lastHeatingSetAt: null, lastHeatingSetLevel: null, manualLevelOverrideAt: null })
                     .where(eq(userTemperatureProfile.email, profile.users.email));
                 }
                 if (heatingStatus.isHeating) {
@@ -209,17 +209,17 @@ export async function adjustTemperature(testMode?: TestMode): Promise<void> {
                     console.log(`Turned off heating (off phase) for user ${profile.users.email}`);
                   }
                 } else {
-                  console.log(`Off phase, bed already off. Override flag cleared for user ${profile.users.email}`);
+                  console.log(`Off phase, bed already off. All flags cleared for user ${profile.users.email}`);
                 }
               } else if (isOverridden) {
-                // Schedule was manually overridden — skip all heating until "off" phase clears it
-                console.log(`Manual override active — skipping heating for user ${profile.users.email}`);
-              } else {
-                // Active heating phase
+                // Schedule was manually overridden (bed turned off) — skip all heating until "off" phase clears it
+                console.log(`Manual off override active — skipping heating for user ${profile.users.email}`);
+              } else if (!heatingStatus.isHeating) {
+                // Bed is off during a heating phase
                 const cronPreviouslyActivated = tempProfile.lastHeatingSetAt !== null;
 
-                if (!heatingStatus.isHeating && allowManualOverride && cronPreviouslyActivated) {
-                  // Bed is off, but we previously turned it on this cycle → manual override detected
+                if (allowManualOverride && cronPreviouslyActivated) {
+                  // Cron previously turned it on, now it's off → manual off detected
                   if (!testMode?.enabled) {
                     await db
                       .update(userTemperatureProfile)
@@ -227,21 +227,69 @@ export async function adjustTemperature(testMode?: TestMode): Promise<void> {
                       .where(eq(userTemperatureProfile.email, profile.users.email));
                   }
                   console.log(`Manual off detected — setting override flag for user ${profile.users.email}`);
-                } else if (!heatingStatus.isHeating || heatingStatus.heatingLevel !== level) {
-                  // Turn on or adjust level
+                } else {
+                  // First activation of the cycle — turn on
                   if (testMode?.enabled) {
                     console.log(`[TEST MODE] Would set heating to level ${level} for user ${profile.users.email}`);
                   } else {
                     await retryApiCall(() => setPreheat(token, profile.users.eightUserId, level, 3600));
                     await db
                       .update(userTemperatureProfile)
-                      .set({ lastHeatingSetAt: now })
+                      .set({ lastHeatingSetAt: now, lastHeatingSetLevel: level, manualLevelOverrideAt: null })
                       .where(eq(userTemperatureProfile.email, profile.users.email));
                     console.log(`Set heating to level ${level} for user ${profile.users.email}`);
                   }
-                } else {
-                  console.log(`Heating already at correct level ${level} for user ${profile.users.email}`);
                 }
+              } else if (heatingStatus.heatingLevel !== level) {
+                // Bed is on but at a different level than the phase wants
+                const LEVEL_OVERRIDE_DURATION_MS = 90 * 60 * 1000;
+                const hasLevelOverride = tempProfile.manualLevelOverrideAt !== null;
+                const levelOverrideActive = hasLevelOverride
+                  && (now.getTime() - tempProfile.manualLevelOverrideAt!.getTime()) < LEVEL_OVERRIDE_DURATION_MS;
+                const isNewPhase = tempProfile.lastHeatingSetLevel !== level;
+
+                if (levelOverrideActive) {
+                  // Within 90 min of manual tweak — always respect
+                  console.log(`Manual level tweak protected (${Math.round((now.getTime() - tempProfile.manualLevelOverrideAt!.getTime()) / 60000)}min of 90min) for user ${profile.users.email}`);
+                } else if (hasLevelOverride && !isNewPhase) {
+                  // Override expired but still same phase — keep respecting
+                  console.log(`Manual level tweak respected (same phase, override expired) for user ${profile.users.email}`);
+                } else if (hasLevelOverride && isNewPhase) {
+                  // Override expired and new phase — apply new level
+                  if (testMode?.enabled) {
+                    console.log(`[TEST MODE] Would set heating to level ${level} (phase transition after override) for user ${profile.users.email}`);
+                  } else {
+                    await retryApiCall(() => setPreheat(token, profile.users.eightUserId, level, 3600));
+                    await db
+                      .update(userTemperatureProfile)
+                      .set({ lastHeatingSetAt: now, lastHeatingSetLevel: level, manualLevelOverrideAt: null })
+                      .where(eq(userTemperatureProfile.email, profile.users.email));
+                    console.log(`Set heating to level ${level} (phase transition after override) for user ${profile.users.email}`);
+                  }
+                } else if (allowManualOverride && tempProfile.lastHeatingSetLevel === level) {
+                  // Cron previously set this phase's level but it's now different → user tweaked
+                  if (!testMode?.enabled) {
+                    await db
+                      .update(userTemperatureProfile)
+                      .set({ manualLevelOverrideAt: now })
+                      .where(eq(userTemperatureProfile.email, profile.users.email));
+                  }
+                  console.log(`Manual level tweak detected — protecting for 90min for user ${profile.users.email}`);
+                } else {
+                  // Phase transition or first activation — apply
+                  if (testMode?.enabled) {
+                    console.log(`[TEST MODE] Would set heating to level ${level} for user ${profile.users.email}`);
+                  } else {
+                    await retryApiCall(() => setPreheat(token, profile.users.eightUserId, level, 3600));
+                    await db
+                      .update(userTemperatureProfile)
+                      .set({ lastHeatingSetAt: now, lastHeatingSetLevel: level, manualLevelOverrideAt: null })
+                      .where(eq(userTemperatureProfile.email, profile.users.email));
+                    console.log(`Set heating to level ${level} for user ${profile.users.email}`);
+                  }
+                }
+              } else {
+                console.log(`Heating already at correct level ${level} for user ${profile.users.email}`);
               }
             } else {
               console.log(`Schedule inactive for user ${profile.users.email}`);
