@@ -44,9 +44,14 @@ src/
 
 **Temperature Control:** External cron hits `/api/temperatureCron` → fetches all user profiles → calculates sleep stage based on user's timezone and schedule → calls Eight Sleep API to set temperature.
 
-**Sleep Cycle:** Pre-heating starts 1h before bedtime, then initial → mid → final phases, then auto-off at wakeup. The cron determines the current stage on every run and sets the correct temperature using `setPreheat()`.
+**Schedule Mode:** User creates named profiles (e.g., "Summer", "Winter") with arbitrary phases, each with a time ("HH:MM") and level. The cron determines the current phase on every run and applies the correct level via `setPreheat()`. A `null` level phase turns the bed off and resets all override flags for the next cycle.
 
 **Preheat-Only Mode:** Activates heating once at the configured preheat time (45-min activation window), with a 12-hour duration. The cron never turns off the bed — manual control is fully respected after activation.
+
+**Manual Override Detection (when `allowManualOverride` is enabled on a profile):**
+- **Manual off:** If the cron previously activated the bed and it's found off, `scheduleOverriddenAt` is set. All heating is skipped until the "off" phase clears it. 18h safety auto-clear.
+- **Manual level tweak:** If the cron set a phase level and the bed is now at a different level, `manualLevelOverrideAt` is set. The tweak is protected for 90 min (even across phase transitions). After 90 min, the next phase boundary resumes the schedule; same-phase tweaks are respected indefinitely.
+- **State tracking:** `lastHeatingSetAt`, `lastHeatingSetLevel`, `scheduleOverriddenAt`, `manualLevelOverrideAt` on `userTemperatureProfile`. All cleared by the "off" phase.
 
 ## Eight Sleep API Primitives
 
